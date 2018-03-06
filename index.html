@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Mapping Earthquake data to the Earth</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link href="https://fonts.googleapis.com/css?family=Oswald" rel="stylesheet">
+    <style>
+        body {
+            background-color: #000000;
+            margin: 0px;
+            overflow: hidden;
+            font-family: 'Oswald', sans-serif;
+            width: 100%;
+            height: 100%;
+        }
+        
+        a {
+            color: #a1d5f0;
+            text-decoration: none;
+        }
+        
+        container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 500;
+        }
+        
+        #loading {
+            text-align: center;
+            height: 200px;
+            width: 400px;
+            color: #a1d5f0;
+            font-size: 1.5em;
+            margin: auto;
+            position: relative;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        #inner {
+            height: 200px;
+            width: 600px;
+            color: #a1d5f0;
+            margin: 20px;
+            position: absolute;
+            top: 100%;
+            transform: translateY(-90%);
+            z-index: 100;
+        }
+        
+        #amount {
+            color: #fff;
+            font-size: 2em;
+        }
+        
+        #author {
+            line-height: 2em;
+        }
+
+    </style>
+</head>
+
+<body>
+    <container id="preloader">
+        <div id="loading">
+            <img src="img/loader.gif">
+            <p>LOADING
+                <br><span id="status">Libraries | Data | Images</span></p>
+        </div>
+    </container>
+
+    <div id="inner">
+        <div id="title"></div>
+        <div id="amount"></div>
+        <div id="author">Visualization: <a href="http://www.webspaceinvader.com">WebSpaceInvader</a></div>
+    </div>
+
+    <script src="js/three.min.js"></script>
+    <script src='js/postprocessing/EffectComposer.js'></script>
+    <script src='js/postprocessing/RenderPass.js'></script>
+    <script src='js/postprocessing/ShaderPass.js'></script>
+    <script src='js/postprocessing/MaskPass.js'></script>
+    <script src='js/shaders/CopyShader.js'></script>
+    <script src='js/shaders/FilmShader.js'></script>
+    <script src='js/shaders/RGBShiftShader.js'></script>
+    <script src='js/BadTVShader.js'></script>
+
+
+    <script>
+        var status = document.getElementById("status");
+        var SCREEN_WIDTH = window.innerWidth,
+            SCREEN_HEIGHT = window.innerHeight,
+            mouseX = 0,
+            mouseY = 0,
+            windowHalfX = window.innerWidth / 2,
+            windowHalfY = window.innerHeight / 2,
+            camera, scene, renderer, data, title, date, amount;
+        var textureLoader = new THREE.TextureLoader();
+        var composer, shaderTime = 0,
+            badTVParams, badTVPass, rgbPass, filmPass, renderPass, copyPass, loaded = 0,
+            toLoad = 2,
+            group;
+
+
+        function map(n, start1, stop1, start2, stop2) {
+            return ((n - start1) / (stop1 - start1)) * (stop2 - start2) + start2;
+        }
+
+        function loader() {
+            loaded++;
+            if (loaded >= toLoad) {
+                //remove preload screen
+                var cover = document.getElementById("preloader");
+                cover.style.visibility = 'hidden';
+                animate();
+            }
+        }
+
+        function init() {
+            status.innerHTML = "Loading Images";
+            var container, particles, particle;
+
+            container = document.createElement('div');
+            document.body.appendChild(container);
+
+            camera = new THREE.PerspectiveCamera(75, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 10000);
+            camera.position.y = 100;
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.004);
+
+            renderer = new THREE.WebGLRenderer({
+                antialias: true
+            });
+            renderer.setClearColor(0x030f0f);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+            container.appendChild(renderer.domElement);
+
+            //POST PROCESSING
+            //Create Shader Passes
+            renderPass = new THREE.RenderPass(scene, camera);
+            badTVPass = new THREE.ShaderPass(THREE.BadTVShader);
+            rgbPass = new THREE.ShaderPass(THREE.RGBShiftShader);
+            filmPass = new THREE.ShaderPass(THREE.FilmShader);
+            copyPass = new THREE.ShaderPass(THREE.CopyShader);
+
+            //set shader uniforms
+            filmPass.uniforms.grayscale.value = 0;
+
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderPass);
+            composer.addPass(filmPass);
+            composer.addPass(badTVPass);
+            composer.addPass(rgbPass);
+            composer.addPass(copyPass);
+            copyPass.renderToScreen = true;
+
+            params();
+            group = new THREE.Group();
+            scene.add(group);
+            var light = new THREE.SpotLight(0x99ffff, 1, 0, Math.PI, 1);
+            var planetTexture = textureLoader.load('img/earth_map.png', function(tex) {
+                loader();
+            });
+            var geometry = new THREE.SphereBufferGeometry(100, 350, 350);
+            var material = new THREE.MeshBasicMaterial({
+                map: planetTexture,
+                transparent: true,
+                opacity: 0.99,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
+            });
+            var earth = new THREE.Mesh(geometry, material);
+            group.add(earth);
+            material = new THREE.MeshBasicMaterial({
+                map: planetTexture,
+                transparent: true,
+                opacity: 0.95,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
+            });
+            earth = new THREE.Mesh(geometry, material);
+            earth.scale.x = earth.scale.y = earth.scale.z = 1.02;
+            group.add(earth);
+
+            var mesh = new THREE.Object3D();
+            mesh.add(new THREE.LineSegments(
+
+                new THREE.IcosahedronBufferGeometry(110, 1),
+
+                new THREE.LineBasicMaterial({
+                    color: 0x156289,
+                    transparent: true,
+                    opacity: 0.55
+                })
+
+            ));
+            group.add(mesh);
+            geometry = new THREE.Geometry();
+            sprite = textureLoader.load("img/sprite.png", function(tex) {
+                loader();
+            });
+            for (i = 0; i < 2000; i++) {
+                var vertex = new THREE.Vector3();
+                vertex.x = 400 * Math.random() - 200;
+                vertex.y = 400 * Math.random() - 200;
+                vertex.z = 400 * Math.random() - 200;
+                geometry.vertices.push(vertex);
+            }
+            material = new THREE.PointsMaterial({
+                size: 2,
+                map: sprite,
+                transparent: true,
+                opacity: 0.5,
+                alphaTest: 0.5
+
+            });
+
+            particles1 = new THREE.Points(geometry, material);
+            particles1.sortParticles = true;
+            group.add(particles1);
+            for (var i = 0; i < data.features.length; i++) {
+
+                var geometry = new THREE.Geometry();
+                var lat = data.features[i].geometry.coordinates[1];
+                var lon = data.features[i].geometry.coordinates[0];
+                var mag = data.features[i].properties.mag;
+
+                var radius = 100;
+                if (mag > 0) {
+                    var nmag = map(mag, 0, 8, 0, 1);
+                    //console.log(mag);
+                    var phi = (90 - lat) * (Math.PI / 180);
+                    var theta = (lon + 180) * (Math.PI / 180);
+                    var x = -((radius) * Math.sin(phi) * Math.cos(theta));
+                    var z = ((radius) * Math.sin(phi) * Math.sin(theta));
+                    var y = ((radius) * Math.cos(phi));
+                    var vertex = new THREE.Vector3(x, y, z);
+                    geometry.vertices.push(vertex);
+
+                    var vertex2 = vertex.clone();
+                    vertex2.multiplyScalar((nmag * 0.4) + 1);
+                    geometry.vertices.push(vertex2);
+                    var myCol = new THREE.Color(0xffffff);
+                    myCol.setHSL((mag / 5), 0.9, 0.6);
+                    var line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+                        color: myCol,
+                        linewidth: 1
+                    }));
+                    group.add(line);
+                }
+            }
+            group.rotation.x = 0.2;
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            document.addEventListener('touchstart', onDocumentTouchStart, false);
+            document.addEventListener('touchmove', onDocumentTouchMove, false);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onWindowResize() {
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onDocumentMouseMove(event) {
+            mouseX = event.clientX - windowHalfX;
+            mouseY = event.clientY - windowHalfY;
+        }
+
+        function onDocumentTouchStart(event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+                mouseX = event.touches[0].pageX - windowHalfX;
+                mouseY = event.touches[0].pageY - windowHalfY;
+            }
+        }
+
+        function onDocumentTouchMove(event) {
+            if (event.touches.length == 1) {
+                event.preventDefault();
+                mouseX = event.touches[0].pageX - windowHalfX;
+                mouseY = event.touches[0].pageY - windowHalfY;
+            }
+        }
+
+        function params() {
+            badTVPass.uniforms['distortion'].value = 0.9;
+            badTVPass.uniforms['distortion2'].value = 0.5;
+            badTVPass.uniforms['speed'].value = 0.05;
+            badTVPass.uniforms['rollSpeed'].value = 0;
+            rgbPass.uniforms['angle'].value = 0;
+            rgbPass.uniforms['amount'].value = 0.003;
+            filmPass.uniforms['sCount'].value = 1000;
+            filmPass.uniforms['sIntensity'].value = 0.6;
+            filmPass.uniforms['nIntensity'].value = 0.4;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+        }
+
+        function render() {
+            group.rotation.y += 0.005;
+            camera.position.x += ((mouseX / 4) + 200 - camera.position.x) * 0.05;
+            camera.position.y += (-(mouseY / 4) - camera.position.y) * 0.05;
+            camera.lookAt(scene.position);
+            shaderTime += 0.1;
+            badTVPass.uniforms['time'].value = shaderTime;
+            filmPass.uniforms['time'].value = shaderTime;
+            composer.render(0.1);
+        }
+
+        var httpRequest;
+
+        function makeRequest() {
+            httpRequest = new XMLHttpRequest();
+            if (!httpRequest) {
+                alert('Giving up :( Cannot create an XMLHTTP instance');
+                return false;
+            }
+            httpRequest.onreadystatechange = alertContents;
+            httpRequest.open('GET', 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson');
+            httpRequest.send();
+        }
+        makeRequest();
+
+        function alertContents() {
+            if (httpRequest.readyState === XMLHttpRequest.DONE) {
+                if (httpRequest.status === 200) {
+                    data = JSON.parse(httpRequest.responseText);
+                    title = document.getElementById("title");
+                    amount = document.getElementById("amount");
+                    title.innerHTML = data.metadata.title;
+
+                    var d = new Date();
+                    var y = d.getFullYear();
+                    var month = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", ];
+                    var m = month[d.getMonth()];
+                    amount.innerHTML = m + " " + y + ", Last 7 Days: " + data.metadata.count + " Earthquakes";
+
+                    init();
+                } else {
+                    alert('There was a problem with the request.');
+                }
+            }
+        }
+
+    </script>
+</body>
+
+</html>
