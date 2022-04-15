@@ -63,7 +63,6 @@ THREE.ConvolutionShader = {
 
 		"}"
 
-
 	].join( "\n" ),
 
 	buildKernel: function ( sigma ) {
